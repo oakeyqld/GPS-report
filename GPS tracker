@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GPS 位置回報系統</title>
+  <style>
+    :root {
+      --primary-color: #2563eb;
+      --primary-hover: #1d4ed8;
+      --bg-color: #f8fafc;
+      --card-bg: #ffffff;
+      --text-main: #1e293b;
+      --text-muted: #64748b;
+      --border-color: #e2e8f0;
+      --success-bg: #ecfdf5;
+      --success-text: #065f46;
+      --error-bg: #fef2f2;
+      --error-text: #991b1b;
+      --info-bg: #eff6ff;
+      --info-text: #1e40af;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, "PingFang TC", "Noto Sans TC", sans-serif;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-main);
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+
+    .container {
+      background: var(--card-bg);
+      width: 100%;
+      max-width: 440px;
+      padding: 24px;
+      border-radius: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -2px rgba(0, 0, 0, 0.05);
+      border: 1px solid var(--border-color);
+    }
+
+    h1 {
+      font-size: 1.35rem;
+      font-weight: 700;
+      text-align: center;
+      margin-bottom: 20px;
+      color: var(--text-main);
+    }
+
+    .form-group {
+      margin-bottom: 16px;
+    }
+
+    label {
+      display: block;
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 6px;
+    }
+
+    .required::after {
+      content: " *";
+      color: #dc2626;
+    }
+
+    input[type="text"] {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 1rem;
+      border: 1px solid var(--border-color);
+      border-radius: 8px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    input[type="text"]:focus {
+      border-color: var(--primary-color);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
+    }
+
+    .device-id-text {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-top: 4px;
+      word-break: break-all;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      color: #fff;
+      background-color: var(--primary-color);
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background-color 0.2s, opacity 0.2s;
+      margin-top: 8px;
+    }
+
+    button:hover:not(:disabled) {
+      background-color: var(--primary-hover);
+    }
+
+    button:disabled {
+      opacity: 0.65;
+      cursor: not-allowed;
+    }
+
+    .status-box {
+      margin-top: 16px;
+      padding: 12px;
+      border-radius: 8px;
+      font-size: 0.9rem;
+      line-height: 1.5;
+      display: none;
+      word-break: break-word;
+    }
+
+    .status-box.info {
+      display: block;
+      background-color: var(--info-bg);
+      color: var(--info-text);
+      border: 1px solid #bfdbfe;
+    }
+
+    .status-box.success {
+      display: block;
+      background-color: var(--success-bg);
+      color: var(--success-text);
+      border: 1px solid #a7f3d0;
+    }
+
+    .status-box.error {
+      display: block;
+      background-color: var(--error-bg);
+      color: var(--error-text);
+      border: 1px solid #fecaca;
+    }
+
+    /* 行動裝置最佳化 */
+    @media (max-width: 480px) {
+      body {
+        padding: 12px;
+      }
+      .container {
+        padding: 20px 16px;
+        box-shadow: none;
+      }
+      h1 {
+        font-size: 1.25rem;
+      }
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <h1>GPS 位置回報</h1>
+
+    <form id="report-form" novalidate>
+      <div class="form-group">
+        <label for="team-code" class="required">團隊編號</label>
+        <input type="text" id="team-code" placeholder="請輸入團隊編號" required />
+      </div>
+
+      <div class="form-group">
+        <label for="user-name">姓名暱稱</label>
+        <input type="text" id="user-name" placeholder="選填" />
+      </div>
+
+      <div class="form-group">
+        <div class="device-id-text">裝置識別碼：<span id="uuid-display">讀取中...</span></div>
+      </div>
+
+      <button type="submit" id="submit-btn">取得位置並送出</button>
+    </form>
+
+    <div id="status-box" class="status-box"></div>
+  </div>
+
+  <script>
+    // -------------------------------------------------------------
+    // 請在此處填入你的 Google Apps Script 部署 URL
+    // -------------------------------------------------------------
+    const GAS_API_URL = "https://script.google.com/macros/s/AKfycbwzwdZXXSXNCHxPNJKr53jp8uTuXiVzhT4BvfT28-L00bSUrpwA-ttQke4Vf0tcEyit/exec";
+
+    const STORAGE_KEY_UUID = "report_device_uuid";
+
+    // 取得或生成裝置 UUID
+    function getOrCreateDeviceId() {
+      let uuid = localStorage.getItem(STORAGE_KEY_UUID);
+      if (!uuid) {
+        uuid = crypto.randomUUID();
+        localStorage.setItem(STORAGE_KEY_UUID, uuid);
+      }
+      return uuid;
+    }
+
+    // 取得「亞洲/台北（Asia/Taipei）」時區格式時間（YYYY/MM/DD HH:MM）
+    function getTaipeiTimestamp() {
+      const now = new Date();
+      const formatter = new Intl.DateTimeFormat("zh-TW", {
+        timeZone: "Asia/Taipei",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      });
+
+      const parts = formatter.formatToParts(now);
+      const getPart = (type) => parts.find((p) => p.type === type).value;
+
+      const year = getPart("year");
+      const month = getPart("month");
+      const day = getPart("day");
+      const hour = getPart("hour");
+      const minute = getPart("minute");
+
+      return `${year}/${month}/${day} ${hour}:${minute}`;
+    }
+
+    // 更新狀態訊息
+    function updateStatus(message, type = "info") {
+      const box = document.getElementById("status-box");
+      box.className = `status-box ${type}`;
+      box.textContent = message;
+    }
+
+    // 取得 GPS 經緯度（小數點後 6 位）
+    function fetchLocation() {
+      return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) {
+          reject(new Error("此裝置或瀏覽器不支援地理定位功能。"));
+          return;
+        }
+
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const latitude = Number(pos.coords.latitude.toFixed(6));
+            const longitude = Number(pos.coords.longitude.toFixed(6));
+            resolve({ latitude, longitude });
+          },
+          (err) => {
+            let errorMsg = "無法取得位置資訊。";
+            switch (err.code) {
+              case err.PERMISSION_DENIED:
+                errorMsg = "定位權限遭拒，請至瀏覽器設定允許存取位置資訊。";
+                break;
+              case err.POSITION_UNAVAILABLE:
+                errorMsg = "無法取得當前位置，請確認 GPS 或網路狀態。";
+                break;
+              case err.TIMEOUT:
+                errorMsg = "定位請求逾時，請至收訊良好處重試。";
+                break;
+            }
+            reject(new Error(errorMsg));
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 10000,
+            maximumAge: 0
+          }
+        );
+      });
+    }
+
+    // 初始化頁面
+    document.addEventListener("DOMContentLoaded", () => {
+      const deviceId = getOrCreateDeviceId();
+      document.getElementById("uuid-display").textContent = deviceId;
+
+      const form = document.getElementById("report-form");
+      const submitBtn = document.getElementById("submit-btn");
+
+      form.addEventListener("submit", async (e) => {
+        e.preventDefault();
+
+        const teamCodeInput = document.getElementById("team-code");
+        const userNameInput = document.getElementById("user-name");
+
+        const teamCode = teamCodeInput.value.trim();
+        const name = userNameInput.value.trim();
+
+        // 1. 欄位驗證
+        if (!teamCode) {
+          updateStatus("請填寫「團隊編號」！", "error");
+          teamCodeInput.focus();
+          return;
+        }
+
+        // 進入送出狀態
+        submitBtn.disabled = true;
+        updateStatus("正在取得 GPS 座標...", "info");
+
+        try {
+          // 2. 取得經緯度
+          const { latitude, longitude } = await fetchLocation();
+
+          // 3. 準備 Payload
+          updateStatus("座標取得成功，正在送出資料...", "info");
+          const timestamp = getTaipeiTimestamp();
+          const payload = {
+            teamCode,
+            uuid: deviceId,
+            name,
+            latitude,
+            longitude,
+            timestamp
+          };
+
+          // 4. 送出至 Google Apps Script Web App
+          // 註：Google Apps Script 跨域須採用 mode: "no-cors"
+          // 注意：送 JSON 字串時使用 text/plain 可避免觸發 preflight OPTIONS 請求
+          await fetch(GAS_API_URL, {
+            method: "POST",
+            mode: "no-cors",
+            headers: {
+              "Content-Type": "text/plain;charset=utf-8"
+            },
+            body: JSON.stringify(payload)
+          });
+
+          // no-cors 下無法讀取 response body，只要請求沒丟出網路例外即代表已發送
+          updateStatus(`回報成功！\n經緯度：${latitude}, ${longitude}\n時間：${timestamp}`, "success");
+        } catch (error) {
+          updateStatus(`回報失敗：${error.message}`, "error");
+        } finally {
+          submitBtn.disabled = false;
+        }
+      });
+    });
+  </script>
+</body>
+</html>
